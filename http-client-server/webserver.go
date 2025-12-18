@@ -49,6 +49,8 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	fmt.Println("Server started listening on port", port)
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -59,48 +61,48 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Failed to accept connection: %v\n", err)
 			continue
 		}
-		fmt.Printf("Accepted connection from %s\n", conn.RemoteAddr().String())
+		fmt.Printf("Accepted connection from %s\n", conn.RemoteAddr())
 
 		wg.Go(func() {
-			if err := handleConn(conn, "Hello, World!"); err != nil {
-				fmt.Fprintf(os.Stderr, "Error handling connection: %v\n", err)
+			defer conn.Close()
+
+			r := bufio.NewReader(conn)
+			var buf bytes.Buffer
+
+			for {
+				time.Sleep(time.Duration(rand.N(5)) * time.Second) // Simulate processing delay
+
+				line, err := r.ReadBytes('\n')
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						return
+					}
+					fmt.Fprintf(os.Stderr, "Failed to read bytes for connection %s: %v\n", conn.RemoteAddr(), err)
+					return
+				}
+				buf.Write(line)
+				if bytes.HasSuffix(buf.Bytes(), []byte("\r\n\r\n")) {
+					break
+				}
+			}
+
+			body := "Hello, World!\n"
+
+			response := "HTTP/1.1 200 OK\r\n" +
+				"Content-Type: text/plain\r\n" +
+				fmt.Sprintf("Content-Length: %d\r\n", len(body)) +
+				"Connection: close\r\n" +
+				"\r\n" +
+				body
+
+			_, err := conn.Write([]byte(response))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to write response for connection %s: %v\n", conn.RemoteAddr(), err)
+				return
 			}
 		})
 	}
 
 	wg.Wait()
 	fmt.Println("Server stopped")
-}
-
-func handleConn(conn net.Conn, body string) error {
-	defer conn.Close()
-
-	r := bufio.NewReader(conn)
-	var buf bytes.Buffer
-
-	for {
-		time.Sleep(time.Duration(rand.N(5)) * time.Second) // Simulate processing delay
-
-		line, err := r.ReadBytes('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-		buf.Write(line)
-		if bytes.HasSuffix(buf.Bytes(), []byte("\r\n\r\n")) {
-			break
-		}
-	}
-
-	response := "HTTP/1.1 200 OK\r\n" +
-		"Content-Type: text/plain\r\n" +
-		fmt.Sprintf("Content-Length: %d\r\n", len(body)) +
-		"Connection: close\r\n" +
-		"\r\n" +
-		body
-
-	_, err := conn.Write([]byte(response))
-	return err
 }
