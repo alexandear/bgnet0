@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -26,38 +25,26 @@ func main() {
 		}
 	}
 
-	if err := get(context.Background(), hostname, port); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	address := net.JoinHostPort(hostname, port)
+	addr, err := net.ResolveTCPAddr("tcp", address)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve addr %q: %v\n", address, err)
 		os.Exit(1)
 	}
-}
 
-func get(ctx context.Context, hostname, port string) error {
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(hostname, port))
+	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
-		return fmt.Errorf("failed to connect to %s:%s: %w", hostname, port, err)
-	}
-	defer func() {
-		err := conn.Close()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to close connection: %v\n", err)
-		}
-	}()
-
-	if err := httpGET(conn, hostname); err != nil {
-		return fmt.Errorf("failed to send HTTP GET request: %w", err)
+		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
+		os.Exit(1)
 	}
 
-	return nil
-}
-
-func httpGET(conn net.Conn, hostname string) error {
 	req := "GET / HTTP/1.1\r\n" +
 		"Host: " + hostname + "\r\n" +
 		"Connection: close\r\n\r\n"
-	_, err := conn.Write([]byte(req))
+	_, err = conn.Write([]byte(req))
 	if err != nil {
-		return fmt.Errorf("failed to write request: %w", err)
+		fmt.Fprintf(os.Stderr, "Failed to write request: %v\n", err)
+		os.Exit(1)
 	}
 
 	buf := make([]byte, 4096)
@@ -65,16 +52,22 @@ func httpGET(conn net.Conn, hostname string) error {
 		n, err := conn.Read(buf)
 		if n > 0 {
 			if _, err := os.Stdout.Write(buf[:n]); err != nil {
-				return fmt.Errorf("failed to write to stdout: %w", err)
+				fmt.Fprintf(os.Stderr, "Failed to write to stdout: %v\n", err)
+				os.Exit(1)
 			}
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				return fmt.Errorf("failed to read response: %w", err)
+				fmt.Fprintf(os.Stderr, "Failed to read response: %v\n", err)
+				os.Exit(1)
 			}
 			break
 		}
 	}
 
-	return nil
+	err = conn.Close()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to close connection: %v\n", err)
+		os.Exit(1)
+	}
 }
