@@ -3,18 +3,12 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net"
 	"os"
-	"os/signal"
 	"strconv"
-	"sync"
-	"syscall"
-	"time"
 )
 
 func main() {
@@ -27,9 +21,6 @@ func main() {
 		}
 	}
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
 	ln, err := net.Listen("tcp", net.JoinHostPort("", port))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to listen on port %s: %v\n", port, err)
@@ -37,47 +28,34 @@ func main() {
 	}
 	defer ln.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		<-sigs
-		fmt.Println("Shutting down server...")
-		cancel()
-		ln.Close()
-	}()
-
-	var wg sync.WaitGroup
-
 	fmt.Println("Server started listening on port", port)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			if errors.Is(ctx.Err(), context.Canceled) {
-				// Server is shutting down
-				break
-			}
 			fmt.Fprintf(os.Stderr, "Failed to accept connection: %v\n", err)
 			continue
 		}
 		fmt.Printf("Accepted connection from %s\n", conn.RemoteAddr())
 
-		wg.Go(func() {
-			defer conn.Close()
+		go func(conn net.Conn) {
+			defer func() {
+				if err := conn.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close connection %s: %v\n", conn.RemoteAddr(), err)
+					return
+				}
+				fmt.Printf("Closed connection from %s\n", conn.RemoteAddr())
+			}()
 
 			r := bufio.NewReader(conn)
 			var buf bytes.Buffer
 
 			for {
-				time.Sleep(time.Duration(rand.N(5)) * time.Second) // Simulate processing delay
-
 				line, err := r.ReadBytes('\n')
 				if err != nil {
-					if errors.Is(err, io.EOF) {
-						return
+					if !errors.Is(err, io.EOF) {
+						fmt.Fprintf(os.Stderr, "Failed to read bytes for connection %s: %v\n", conn.RemoteAddr(), err)
 					}
-					fmt.Fprintf(os.Stderr, "Failed to read bytes for connection %s: %v\n", conn.RemoteAddr(), err)
 					return
 				}
 				buf.Write(line)
@@ -100,9 +78,6 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Failed to write response for connection %s: %v\n", conn.RemoteAddr(), err)
 				return
 			}
-		})
+		}(conn)
 	}
-
-	wg.Wait()
-	fmt.Println("Server stopped")
 }
