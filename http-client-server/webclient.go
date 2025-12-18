@@ -26,13 +26,7 @@ func main() {
 	}
 
 	address := net.JoinHostPort(hostname, port)
-	addr, err := net.ResolveTCPAddr("tcp", address)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve addr %q: %v\n", address, err)
-		os.Exit(1)
-	}
-
-	conn, err := net.DialTCP("tcp", nil, addr)
+	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
