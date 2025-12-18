@@ -2,6 +2,8 @@
 
 Read [the article](https://alexandear.github.io/posts/2025-12-18-beej-project-http-client-server/) for explanations.
 
+![Terminal with running webserver and webclient](./terminal.png)
+
 ## Client
 
 ```sh
